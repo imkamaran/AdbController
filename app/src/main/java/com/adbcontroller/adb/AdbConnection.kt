@@ -50,32 +50,59 @@ class AdbConnection private constructor(
         )
         sendMessage(cnxn)
 
-        var response = readMessage()
+        // ADB auth handshake. The daemon replies to CNXN with AUTH(TOKEN); we sign it with our
+        // private key. If the key isn't trusted yet the daemon re-sends AUTH(TOKEN), at which point
+        // we send our public key so the user can approve it. After approval the daemon issues a
+        // *fresh* token to be signed with the now-trusted key, and only then sends CNXN — so this
+        // must be a loop, not a fixed sequence, for the first connection to a device to succeed.
+        var sentSignature = false
+        var sentPublicKey = false
+        var authRounds = 0
 
-        if (response.command == AdbMessage.A_AUTH && response.arg0 == AdbMessage.AUTH_TOKEN) {
-            val signed = crypto.signToken(response.data)
-            sendMessage(AdbMessage(AdbMessage.A_AUTH, AdbMessage.AUTH_SIGNATURE, 0, signed))
-
-            response = readMessage()
-
-            if (response.command == AdbMessage.A_AUTH) {
-                val pubKey = crypto.getAdbPublicKey()
-                sendMessage(AdbMessage(AdbMessage.A_AUTH, AdbMessage.AUTH_RSAPUBLICKEY, 0, pubKey))
-                transport.setReadTimeout(AUTH_PROMPT_TIMEOUT_MS)
-                response = readMessage()
+        while (true) {
+            val response = readMessage()
+            when (response.command) {
+                AdbMessage.A_CNXN -> {
+                    transport.setReadTimeout(0)
+                    maxData = response.arg1
+                    deviceBanner = String(response.data, Charsets.UTF_8)
+                    isConnected = true
+                    readerJob = scope.launch { messageLoop() }
+                    return
+                }
+                AdbMessage.A_AUTH -> {
+                    if (response.arg0 != AdbMessage.AUTH_TOKEN) {
+                        throw AdbProtocolException("Unexpected AUTH response (arg0=${response.arg0})")
+                    }
+                    if (++authRounds > MAX_AUTH_ROUNDS) {
+                        throw AdbProtocolException("Authentication failed - device did not accept the key")
+                    }
+                    when {
+                        !sentSignature -> {
+                            sendMessage(
+                                AdbMessage(AdbMessage.A_AUTH, AdbMessage.AUTH_SIGNATURE, 0, crypto.signToken(response.data))
+                            )
+                            sentSignature = true
+                        }
+                        !sentPublicKey -> {
+                            sendMessage(
+                                AdbMessage(AdbMessage.A_AUTH, AdbMessage.AUTH_RSAPUBLICKEY, 0, crypto.getAdbPublicKey())
+                            )
+                            sentPublicKey = true
+                            // The user now has to approve the key on the target; allow time for the dialog.
+                            transport.setReadTimeout(AUTH_PROMPT_TIMEOUT_MS)
+                        }
+                        else -> {
+                            // Key approved: sign the fresh token the daemon issued after approval.
+                            sendMessage(
+                                AdbMessage(AdbMessage.A_AUTH, AdbMessage.AUTH_SIGNATURE, 0, crypto.signToken(response.data))
+                            )
+                        }
+                    }
+                }
+                else -> throw AdbProtocolException("Expected CNXN or AUTH, got ${response.commandName()}")
             }
         }
-
-        if (response.command != AdbMessage.A_CNXN) {
-            throw AdbProtocolException("Expected CNXN, got ${response.commandName()}")
-        }
-        transport.setReadTimeout(0)
-
-        maxData = response.arg1
-        deviceBanner = String(response.data, Charsets.UTF_8)
-        isConnected = true
-
-        readerJob = scope.launch { messageLoop() }
     }
 
     suspend fun open(destination: String): AdbStream {
@@ -214,6 +241,7 @@ class AdbConnection private constructor(
     companion object {
         private const val LOCAL_MAX_DATA = 256 * 1024
         private const val AUTH_PROMPT_TIMEOUT_MS = 60_000
+        private const val MAX_AUTH_ROUNDS = 20
 
         suspend fun connectTcp(
             host: String,
