@@ -1,12 +1,22 @@
 # ADB Controller
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-Android%207.0%2B-3DDC84)
+![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF)
+
 Control and manage other Android devices **from your Android phone** — over Wi-Fi or a USB OTG cable, no computer needed. ADB Controller speaks the ADB protocol natively, so every action is a button instead of a shell command.
 
-<p align="center">
-  <img src="screenshots/home.png" width="260" alt="Home screen with recent devices" />
-  <img src="screenshots/about.png" width="260" alt="About screen" />
-  <img src="screenshots/settings.png" width="260" alt="Settings with theme options" />
-</p>
+## Screenshots
+
+Captured while connected to a device at `127.0.0.1:5555` (an emulator controlling its own ADB daemon).
+
+| Home | Dashboard | Dashboard tools |
+|:---:|:---:|:---:|
+| <img src="screenshots/home.png" width="240" alt="Home screen with recent devices" /> | <img src="screenshots/dashboard.png" width="240" alt="Dashboard connected to 127.0.0.1:5555" /> | <img src="screenshots/dashboard-tools.png" width="240" alt="Dashboard diagnostics, root and power sections" /> |
+| **Remote control** | **Quick settings** | **Apps** |
+| <img src="screenshots/remote-control.png" width="240" alt="Live remote control mirroring the device screen" /> | <img src="screenshots/quick-settings.png" width="240" alt="Quick settings toggles" /> | <img src="screenshots/apps.png" width="240" alt="App manager filtered to system apps" /> |
+| **Files** | **Settings** | **About** |
+| <img src="screenshots/files.png" width="240" alt="File manager" /> | <img src="screenshots/settings.png" width="240" alt="Settings with theme options" /> | <img src="screenshots/about.png" width="240" alt="About screen" /> |
 
 ## Features
 
@@ -63,6 +73,18 @@ The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. On Windows, `
 
 Kotlin, Coroutines, Jetpack Compose, Material 3, AndroidX Navigation, CameraX, ML Kit Barcode Scanning and Bouncy Castle. The ADB protocol (transport, authentication, streams and file sync) is implemented from scratch in `app/src/main/java/com/adbcontroller/adb`.
 
-## Author
+## Contributing
 
-Made by [imkamaran](https://github.com/imkamaran).
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. All commits must be signed off (`git commit -s`), and contributions are accepted under the project's GPL-3.0 license.
+
+## Disclaimer
+
+ADB Controller is intended for managing devices that you own or are explicitly authorized to administer. Actions such as rebooting, uninstalling apps, changing system settings or modifying root modules can cause data loss or make a device unstable. Use them at your own risk. The software is provided without warranty, as described in the license.
+
+## License
+
+Copyright (C) 2026 [imkamaran](https://github.com/imkamaran)
+
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 3 of the License.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the [GNU General Public License](LICENSE) for more details.

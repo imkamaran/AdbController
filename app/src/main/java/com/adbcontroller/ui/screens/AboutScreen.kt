@@ -32,6 +32,7 @@ import com.adbcontroller.ui.components.SectionHeader
 
 private const val GITHUB_USER = "imkamaran"
 private const val GITHUB_URL = "https://github.com/$GITHUB_USER"
+private const val REPO_URL = "$GITHUB_URL/AdbController"
 
 private val features = listOf(
     Triple(Icons.Default.Wifi, "Wireless, USB OTG & pairing", AccentColors.Blue),
@@ -154,6 +155,35 @@ fun AboutScreen(onBack: () -> Unit) {
                         Spacer(Modifier.width(6.dp))
                         Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
                     }
+                    OutlinedButton(
+                        onClick = { uriHandler.openUri(REPO_URL) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Source, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Source code")
+                    }
+                }
+            }
+
+            SectionHeader("License")
+            Card(
+                onClick = { uriHandler.openUri("$REPO_URL/blob/main/LICENSE") },
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+            ) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconBadge(Icons.Default.Gavel, AccentColors.Blue, size = 36.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("GNU GPL v3.0", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Free and open source. Provided without warranty.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open license", modifier = Modifier.size(18.dp))
                 }
             }
 
@@ -185,6 +215,7 @@ fun AboutScreen(onBack: () -> Unit) {
 
             SectionHeader("Built with")
             Card(
+                modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
             ) {

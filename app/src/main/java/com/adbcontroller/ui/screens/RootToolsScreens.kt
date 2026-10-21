@@ -178,7 +178,7 @@ fun PerformanceScreen(
 
 @Composable
 private fun CoreRow(core: CpuCore) {
-    val fraction = if (core.curKhz != null && core.maxKhz != null && core.maxKhz > 0)
+    val fraction = if (core.curKhz != null && core.maxKhz != null && core.maxKhz >= MIN_PLAUSIBLE_KHZ)
         (core.curKhz.toFloat() / core.maxKhz).coerceIn(0f, 1f) else null
     Card(
         shape = RoundedCornerShape(16.dp),
@@ -218,9 +218,13 @@ private fun CoreRow(core: CpuCore) {
     }
 }
 
+// Emulators report placeholder limits like 1–2 kHz; treat anything below 1 MHz as unknown.
+private const val MIN_PLAUSIBLE_KHZ = 1000L
+
 private fun rangeText(core: CpuCore): String {
     val min = core.minKhz ?: return ""
     val max = core.maxKhz ?: return ""
+    if (max < MIN_PLAUSIBLE_KHZ) return ""
     return "${min / 1000}–${max / 1000} MHz"
 }
 
