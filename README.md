@@ -61,6 +61,12 @@ Requirements: JDK 17+ and the Android SDK (API 36).
 
 The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. On Windows, `build-app.ps1` builds, installs and launches it on a connected device or emulator.
 
+Debug builds install as **ADB Controller (debug)** (`com.adbcontroller.debug`), so they can sit alongside the release version from [Releases](https://github.com/imkamaran/AdbController/releases).
+
+### "App not installed" when installing a release
+
+Android won't update an app that was signed with a different key. If you previously installed a build of ADB Controller made before v1.0.1's debug-package change (for example one built from source), uninstall it first, then install the release APK.
+
 ## Using it
 
 1. On the target device, enable **Developer options** and **USB debugging**.

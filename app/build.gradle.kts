@@ -38,6 +38,12 @@ android {
     }
 
     buildTypes {
+        // Debug builds are signed with the local debug key, so they get their own package ID;
+        // otherwise a debug install blocks installing the signed release (signature mismatch).
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = false

@@ -15,7 +15,7 @@ if ($LASTEXITCODE -eq 0) {
         Write-Host "Installing..." -ForegroundColor Cyan
         & $adb install -r $apk.FullName
         if ($LASTEXITCODE -eq 0) {
-            & $adb shell am start -n "com.adbcontroller/.MainActivity"
+            & $adb shell am start -n "com.adbcontroller.debug/com.adbcontroller.MainActivity"
         }
     }
 } else {
