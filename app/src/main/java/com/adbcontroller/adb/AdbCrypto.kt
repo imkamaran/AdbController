@@ -7,12 +7,45 @@ import java.math.BigInteger
 import java.security.KeyFactory
 import java.security.KeyPair
 import java.security.KeyPairGenerator
+import java.security.PrivateKey
 import java.security.Signature
+import java.security.cert.X509Certificate
 import java.security.interfaces.RSAPublicKey
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
+import java.util.Date
+import org.bouncycastle.asn1.x500.X500Name
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
+import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 
 class AdbCrypto(private val keyPair: KeyPair) {
+
+    val privateKey: PrivateKey get() = keyPair.private
+
+    private var cachedCertificate: X509Certificate? = null
+
+    /**
+     * Self-signed certificate wrapping this ADB key, used for TLS pairing and connections.
+     * The daemon trusts the key itself, so the certificate's details don't matter.
+     */
+    @Synchronized
+    fun certificate(): X509Certificate {
+        cachedCertificate?.let { return it }
+        val now = System.currentTimeMillis()
+        val subject = X500Name("CN=AdbController")
+        val builder = JcaX509v3CertificateBuilder(
+            subject,
+            BigInteger.valueOf(now),
+            Date(now - DAY_MS),
+            Date(now + 30L * 365 * DAY_MS),
+            subject,
+            keyPair.public
+        )
+        val signer = JcaContentSignerBuilder("SHA256withRSA").build(keyPair.private)
+        return JcaX509CertificateConverter().getCertificate(builder.build(signer))
+            .also { cachedCertificate = it }
+    }
 
     fun signToken(token: ByteArray): ByteArray {
         val signature = Signature.getInstance("SHA1withRSA")
@@ -69,7 +102,17 @@ class AdbCrypto(private val keyPair: KeyPair) {
     }
 
     companion object {
+        private const val DAY_MS = 86_400_000L
         private const val KEY_FILE_PRIVATE = "adb_key"
+
+        @Volatile
+        private var shared: AdbCrypto? = null
+
+        /** The app's single ADB identity, shared by the UI and background pairing. */
+        fun get(context: Context): AdbCrypto =
+            shared ?: synchronized(this) {
+                shared ?: loadOrGenerate(context.applicationContext).also { shared = it }
+            }
         private const val KEY_FILE_PUBLIC = "adb_key.pub"
 
         fun loadOrGenerate(context: Context): AdbCrypto {

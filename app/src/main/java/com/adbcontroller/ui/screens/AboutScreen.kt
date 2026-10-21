@@ -46,7 +46,9 @@ private val libraries = listOf(
     "Kotlin & Coroutines",
     "Jetpack Compose & Material 3",
     "AndroidX Navigation & Lifecycle",
-    "CameraX & ML Kit Barcode Scanning",
+    "libadb-android (wireless debugging pairing)",
+    "Conscrypt",
+    "ZXing (QR codes)",
     "Bouncy Castle"
 )
 

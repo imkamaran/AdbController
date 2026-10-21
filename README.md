@@ -23,7 +23,7 @@ Captured while connected to a device at `127.0.0.1:5555` (an emulator controllin
 **Connecting**
 - Wireless ADB by IP and port, with a list of recent devices (model, Android version, last connected; rename or remove)
 - USB OTG — devices are detected automatically when plugged in
-- Wireless-debugging pairing screens for QR code and pairing code (experimental: connecting through the Android 11+ wireless-debugging port isn't supported yet, so use `adb tcpip` mode for Wi-Fi)
+- Android 11+ wireless-debugging pairing (**experimental**): pair with a 6-digit code (devices on your network are found automatically), pair by showing a QR code for the target to scan, or pair this phone with itself by entering the code in a notification, like Shizuku. Connecting after pairing isn't reliable yet; the dependable Wi-Fi route is to connect once by USB OTG and use **WiFi ADB**, or `adb tcpip 5555`
 
 **Control**
 - Live remote control — see the screen, tap, long-press and swipe; navigation, volume and power keys; type text; open URLs
@@ -77,7 +77,7 @@ Android won't update an app that was signed with a different key. If you previou
 
 ## Tech stack
 
-Kotlin, Coroutines, Jetpack Compose, Material 3, AndroidX Navigation, CameraX, ML Kit Barcode Scanning and Bouncy Castle. The ADB protocol (transport, authentication, streams and file sync) is implemented from scratch in `app/src/main/java/com/adbcontroller/adb`.
+Kotlin, Coroutines, Jetpack Compose, Material 3, AndroidX Navigation, ZXing and Bouncy Castle. The ADB protocol (transport, authentication, streams and file sync) is implemented from scratch in `app/src/main/java/com/adbcontroller/adb`. Wireless-debugging pairing uses [libadb-android](https://github.com/MuntashirAkon/libadb-android) (GPL-3.0-or-later / Apache-2.0) with Conscrypt.
 
 ## Contributing
 

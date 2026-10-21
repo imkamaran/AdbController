@@ -77,6 +77,12 @@ fun AppNavigation(viewModel: DeviceViewModel) {
     }
 
     val back: () -> Unit = { navController.popBackStack() }
+    val openDashboard: () -> Unit = {
+        navController.navigate(Routes.DASHBOARD) {
+            popUpTo(navController.graph.id) { inclusive = true }
+            launchSingleTop = true
+        }
+    }
 
     Box(Modifier.fillMaxSize()) {
         NavHost(
@@ -119,8 +125,12 @@ fun AppNavigation(viewModel: DeviceViewModel) {
             composable(Routes.BATTERY) { BatteryScreen(viewModel, back) }
             composable(Routes.PROPERTIES) { PropertiesScreen(viewModel, back) }
             composable(Routes.WIFI_ADB) { WifiAdbScreen(viewModel, back) }
-            composable(Routes.PAIRING_CODE) { PairingCodeScreen(viewModel, back) }
-            composable(Routes.QR_PAIRING) { QrPairingScreen(viewModel, back) }
+            composable(Routes.PAIRING_CODE) {
+                PairingCodeScreen(viewModel, back, onConnected = { openDashboard() })
+            }
+            composable(Routes.QR_PAIRING) {
+                QrPairingScreen(viewModel, back, onConnected = { openDashboard() })
+            }
             composable(Routes.REMOTE) { RemoteControlScreen(viewModel, back) }
             composable(Routes.QUICK_SETTINGS) { QuickSettingsScreen(viewModel, back) }
             composable(Routes.SETTINGS) {

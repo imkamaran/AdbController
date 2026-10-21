@@ -9,7 +9,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.adbcontroller.adb.AdbConnection
 import com.adbcontroller.adb.AdbCrypto
-import com.adbcontroller.adb.AdbPairing
+import com.adbcontroller.adb.AdbService
+import com.adbcontroller.adb.AdbServiceDiscovery
+import com.adbcontroller.adb.PairingController
+import com.adbcontroller.adb.WirelessDebugging
 import com.adbcontroller.adb.AdbSync
 import com.adbcontroller.data.AppPreferences
 import com.adbcontroller.data.ConnectionType
@@ -24,9 +27,13 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class DeviceInfo(
     val model: String = "",
@@ -161,15 +168,15 @@ sealed class ConnectionState {
 
 sealed class PairingState {
     data object Idle : PairingState()
-    data class Pairing(val target: String) : PairingState()
-    data class Success(val message: String) : PairingState()
+    data class Pairing(val step: String) : PairingState()
+    data class Success(val message: String, val needsConnectPort: Boolean = false) : PairingState()
     data class Failed(val message: String) : PairingState()
 }
 
 class DeviceViewModel(application: Application) : AndroidViewModel(application) {
 
     private val prefs = AppPreferences(application)
-    private val crypto = AdbCrypto.loadOrGenerate(application)
+    private val crypto = AdbCrypto.get(application)
     private var connection: AdbConnection? = null
     private var currentDeviceId: String? = null
 
@@ -210,6 +217,54 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _pairingState = MutableStateFlow<PairingState>(PairingState.Idle)
     val pairingState: StateFlow<PairingState> = _pairingState.asStateFlow()
+
+    private val wireless: WirelessDebugging
+    private val discovery: AdbServiceDiscovery
+    val nearbyServices: StateFlow<List<AdbService>>
+    private var pairingJob: Job? = null
+
+    init {
+        PairingController.init(application)
+        wireless = PairingController.wireless
+        discovery = PairingController.discovery
+        nearbyServices = discovery.services
+
+        // When this phone is paired from the notification, finish by connecting to it.
+        viewModelScope.launch {
+            PairingController.selfPairing.filterNotNull().collect { event ->
+                PairingController.consumeSelfPairing()
+                when (event) {
+                    is PairingController.SelfPairingEvent.Paired -> {
+                        clearConnectionError()
+                        pairingJob?.cancel()
+                        pairingJob = launch(Dispatchers.IO) {
+                            val port = findConnectPort(event.host)
+                            if (port == null) {
+                                _pairingState.value = PairingState.Success(
+                                    "Paired. Enter the port shown under \"IP address & Port\" on the Wireless " +
+                                        "debugging screen, then tap Connect.",
+                                    needsConnectPort = true
+                                )
+                            } else {
+                                connectPairedDevice(event.host, port)
+                            }
+                        }
+                    }
+                    is PairingController.SelfPairingEvent.Failed ->
+                        _pairingState.value = PairingState.Failed(event.message)
+                }
+            }
+        }
+    }
+
+    /** Starts the Shizuku-style flow for pairing this phone with itself via a notification. */
+    fun startSelfPairing() {
+        clearConnectionError()
+        _pairingState.value = PairingState.Pairing(
+            "Waiting for the pairing code. Enter it in the \"Pair this phone\" notification."
+        )
+        PairingController.showCodeNotification(getApplication())
+    }
 
     private val _themeMode = MutableStateFlow(prefs.themeMode)
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
@@ -1517,22 +1572,114 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
 
     // endregion
 
-    // region Pairing
+    // region Pairing (Android 11+ wireless debugging)
 
-    fun pairDevice(host: String, port: Int, pairingCode: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            _pairingState.value = PairingState.Pairing("$host:$port")
-            val result = AdbPairing(crypto).pair(host, port, pairingCode)
-            _pairingState.value = if (result.success) {
-                PairingState.Success(result.message)
-            } else {
-                PairingState.Failed(result.message)
-            }
+    fun startServiceDiscovery() = discovery.start()
+
+    fun stopServiceDiscovery() = discovery.stop()
+
+    /** Pairs using a 6-digit code, then connects. [connectPort] is discovered if not given. */
+    fun pairWithCode(host: String, pairingPort: Int, pairingCode: String, connectPort: Int?) {
+        clearConnectionError()
+        pairingJob?.cancel()
+        pairingJob = viewModelScope.launch(Dispatchers.IO) {
+            pairThenConnect(host.trim(), pairingPort, pairingCode, connectPort)
         }
     }
 
+    /**
+     * Waits for the device that scanned our QR code to advertise the pairing service named
+     * [serviceName], then pairs with [password] and connects.
+     */
+    fun pairWithQr(serviceName: String, password: String) {
+        clearConnectionError()
+        pairingJob?.cancel()
+        pairingJob = viewModelScope.launch(Dispatchers.IO) {
+            _pairingState.value = PairingState.Pairing("Waiting for the device to scan the QR code…")
+            val service = discovery.services
+                .map { list -> list.firstOrNull { it.type == AdbService.Type.PAIRING && it.name == serviceName } }
+                .filterNotNull()
+                .first()
+            pairThenConnect(service.host, service.port, password, null)
+        }
+    }
+
+    /** Connects to an already-paired device through its wireless-debugging port. */
+    fun connectPaired(host: String, connectPort: Int) {
+        clearConnectionError()
+        pairingJob?.cancel()
+        pairingJob = viewModelScope.launch(Dispatchers.IO) { connectPairedDevice(host.trim(), connectPort) }
+    }
+
     fun resetPairingState() {
+        pairingJob?.cancel()
+        pairingJob = null
         _pairingState.value = PairingState.Idle
+    }
+
+    private suspend fun pairThenConnect(host: String, pairingPort: Int, code: String, connectPort: Int?) {
+        _pairingState.value = PairingState.Pairing("Pairing with $host:$pairingPort…")
+        try {
+            wireless.pair(host, pairingPort, code)
+        } catch (e: Exception) {
+            _pairingState.value = PairingState.Failed(pairingError(e, host, pairingPort))
+            return
+        }
+
+        val port = connectPort ?: findConnectPort(host)
+        if (port == null) {
+            _pairingState.value = PairingState.Success(
+                "Paired with $host. Enter the port shown under \"IP address & Port\" on the device's " +
+                    "Wireless debugging screen, then tap Connect.",
+                needsConnectPort = true
+            )
+            return
+        }
+        connectPairedDevice(host, port)
+    }
+
+    private suspend fun connectPairedDevice(host: String, connectPort: Int) {
+        _pairingState.value = PairingState.Pairing("Connecting to $host:$connectPort…")
+        try {
+            wireless.enableTcpMode(host, connectPort, LEGACY_TCP_PORT)
+        } catch (e: Exception) {
+            _pairingState.value = PairingState.Failed(
+                "Couldn't connect to $host:$connectPort. Use the port shown under \"IP address & Port\" " +
+                    "(not the pairing port). ${e.message.orEmpty()}".trim()
+            )
+            return
+        }
+        _pairingState.value = PairingState.Pairing("Opening the connection…")
+        // adbd restarts in TCP mode; give it a moment to start listening.
+        delay(2500)
+        _pairingState.value = PairingState.Success("Paired. Connecting to $host:$LEGACY_TCP_PORT…")
+        connectWireless(host, LEGACY_TCP_PORT)
+    }
+
+    private suspend fun findConnectPort(host: String): Int? = withTimeoutOrNull(5_000) {
+        discovery.services
+            .map { list ->
+                val connect = list.filter { it.type == AdbService.Type.CONNECT }
+                connect.firstOrNull { it.host == host }
+                    ?: connect.singleOrNull()?.takeIf { host == "127.0.0.1" || host == "localhost" }
+            }
+            .filterNotNull()
+            .first()
+            .port
+    }
+
+    private fun pairingError(e: Exception, host: String, port: Int): String {
+        val message = e.message.orEmpty()
+        return when {
+            e is java.net.ConnectException ->
+                "Can't reach $host:$port. Check the IP and pairing port, and keep the pairing dialog open on the device."
+            e is java.net.SocketTimeoutException -> "Timed out pairing with $host:$port."
+            message.contains("Broken pipe", true) || message.contains("reset", true) ||
+                message.contains("closed", true) || e is javax.net.ssl.SSLException ->
+                "The device closed the connection. Check the pairing code, and make sure the pairing dialog " +
+                    "is still open (each code works once and expires when the dialog closes)."
+            else -> message.ifBlank { "Pairing failed" }
+        }
     }
 
     // endregion
@@ -1579,6 +1726,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
 
     override fun onCleared() {
         super.onCleared()
+        discovery.stop()
         val conn = connection
         connection = null
         conn?.disconnect()
@@ -1586,6 +1734,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
 
     companion object {
         private const val SEP = "<<ADBC_SEP>>"
+        private const val LEGACY_TCP_PORT = 5555
         private const val ROOT_STAGING_FILE = "/data/local/tmp/adbcontroller_staging"
         private val MODULE_ID_REGEX = Regex("^[A-Za-z0-9._-]+$")
         private val PERMISSION_REGEX = Regex("^[A-Za-z0-9._]+$")
